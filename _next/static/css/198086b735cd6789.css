@@ -108,6 +108,26 @@ html {
   scroll-behavior: smooth;
 }
 
+/* === Performance: lazy-render off-screen sections === */
+section { content-visibility: auto; contain-intrinsic-size: 1px; }
+
+/* === Decorative Top Frame === */
+body::before {
+  content: "";
+  display: block;
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 9999;
+  height: 6px;
+  background: linear-gradient(90deg, #e8a0b4, #d4a0e8, #a0c4e8, #d4a0e8, #e8a0b4);
+  box-shadow: 0 0 12px rgba(232, 160, 180, 0.5);
+}
+body {
+  padding-top: 6px;
+}
+
 /* Better container handling */
 @media (max-width: 380px) {
   .container { padding-left: 0.75rem !important; padding-right: 0.75rem !important; }
