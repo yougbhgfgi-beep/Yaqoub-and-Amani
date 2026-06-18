@@ -1,4 +1,4 @@
-const CACHE = 'yaqoub-amani-v3';
+const CACHE = 'yaqoub-amani-v4';
 const PRECACHE = [
   '/Yaqoub-and-Amani/',
   '/Yaqoub-and-Amani/index.html',
@@ -28,7 +28,11 @@ const PRECACHE = [
   '/Yaqoub-and-Amani/_next/static/media/df0a9ae256c0569c-s.woff2',
   '/Yaqoub-and-Amani/_next/static/media/e4af272ccee01ff0-s.p.woff2',
   '/Yaqoub-and-Amani/_next/static/media/eaead17c7dbfcd5d-s.p.woff2',
+  '/Yaqoub-and-Amani/WhatsApp Audio 2026-06-17 at 8.59.10 PM.mp4',
+  '/Yaqoub-and-Amani/WhatsApp Video 2026-06-17 at 8.09.59 PM.mp4',
 ];
+
+const MEDIA_RE = /\.(mp4|mp3|ogg|webm|wav|aac)(\?.*)?$/i;
 
 self.addEventListener('install', e => {
   e.waitUntil(
@@ -48,23 +52,76 @@ self.addEventListener('activate', e => {
   );
 });
 
+function parseRange(rangeHeader, total) {
+  const m = rangeHeader.match(/bytes=(\d+)-(\d*)/);
+  if (!m) return null;
+  const start = parseInt(m[1], 10);
+  const end = m[2] ? parseInt(m[2], 10) : total - 1;
+  if (start >= total || end >= total) return null;
+  return { start, end };
+}
+
 self.addEventListener('fetch', e => {
   if (e.request.method !== 'GET') return;
-  if (e.request.url.includes('sockjs-node') || e.request.url.includes('__next')) return;
+  const url = new URL(e.request.url);
+  if (url.hostname === 'localhost' || url.pathname.includes('sockjs-node')) return;
+
+  if (MEDIA_RE.test(url.pathname)) {
+    e.respondWith(handleMedia(e.request));
+    return;
+  }
+
   e.respondWith(
     caches.match(e.request).then(cached => {
       if (cached) return cached;
-      return fetch(e.request).then(response => {
-        if (response.ok) {
-          const clone = response.clone();
+      return fetch(e.request).then(res => {
+        if (res.ok) {
+          const clone = res.clone();
           caches.open(CACHE).then(cache => cache.put(e.request, clone));
         }
-        return response;
+        return res;
       }).catch(() => {
         if (e.request.mode === 'navigate') return caches.match('/Yaqoub-and-Amani/');
-        if (e.request.destination === 'document') return caches.match('/Yaqoub-and-Amani/');
-        try { return new Response('', { status: 408, statusText: 'Offline' }); } catch(_) { }
+        return caches.match('/Yaqoub-and-Amani/');
       });
     })
   );
 });
+
+async function handleMedia(request) {
+  const range = request.headers.get('range');
+  const noRange = new Request(request.url);
+
+  const cached = await caches.match(noRange);
+  if (cached) {
+    if (range) return sliceResponse(cached, range);
+    return cached;
+  }
+
+  try {
+    const res = await fetch(noRange);
+    if (!res.ok) return res;
+    const cache = await caches.open(CACHE);
+    cache.put(noRange, res.clone());
+    if (range) return sliceResponse(res, range);
+    return res;
+  } catch {
+    return new Response('', { status: 503, statusText: 'Offline' });
+  }
+}
+
+async function sliceResponse(full, rangeHeader) {
+  const buf = await full.arrayBuffer();
+  const total = buf.byteLength;
+  const p = parseRange(rangeHeader, total);
+  if (!p) return full;
+  const chunk = buf.slice(p.start, p.end + 1);
+  const h = new Headers();
+  h.set('Content-Type', full.headers.get('Content-Type') || 'application/octet-stream');
+  h.set('Content-Length', chunk.byteLength);
+  h.set('Content-Range', `bytes ${p.start}-${p.end}/${total}`);
+  h.set('Accept-Ranges', 'bytes');
+  if (full.headers.has('Last-Modified')) h.set('Last-Modified', full.headers.get('Last-Modified'));
+  if (full.headers.has('ETag')) h.set('ETag', full.headers.get('ETag'));
+  return new Response(chunk, { status: 206, statusText: 'Partial Content', headers: h });
+}
